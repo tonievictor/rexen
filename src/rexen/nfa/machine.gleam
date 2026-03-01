@@ -1,5 +1,6 @@
 import gleam/dict
 import gleam/list
+import gleam/set.{type Set}
 import gleam/string
 import rexen/nfa/state
 
@@ -65,42 +66,63 @@ pub fn add_transition(
   )
 }
 
-pub type StackValue {
-  StackValue(i: Int, state: state.State)
+pub type Node {
+  Node(index: Int, state: state.State)
 }
 
 pub fn evaluate(nfa: NFA, input: String) -> Bool {
   let assert Ok(s) = dict.get(nfa.states, nfa.initial_state)
-  let stack = [StackValue(0, s)]
-  evaluate_loop(nfa, input, stack)
+
+  let nodes = [Node(0, s)]
+  let visited_nodes: Set(Node) = set.new()
+
+  evaluate_loop(nfa, input, nodes, visited_nodes)
 }
 
-fn evaluate_loop(nfa: NFA, input: String, stack: List(StackValue)) -> Bool {
-  case stack {
+fn evaluate_loop(
+  nfa: NFA,
+  input: String,
+  nodes: List(Node),
+  visited_nodes: Set(Node),
+) -> Bool {
+  case nodes {
     [] -> False
-    [value, ..rest] -> {
-      case list.contains(nfa.ending_states, value.state.name) {
+    [node, ..rest] -> {
+      let visited_nodes =
+        set.insert(visited_nodes, Node(index: node.index, state: node.state))
+
+      case list.contains(nfa.ending_states, node.state.name) {
         True ->
-          case string.length(input) == value.i {
+          case string.length(input) == node.index {
             True -> True
             False -> {
-              let char = string.slice(input, value.i, 1)
-              let new_stack =
+              let char = string.slice(input, node.index, 1)
+              let updated_nodes =
                 process_transitions(
                   nfa,
-                  value.state.transitions,
+                  node.state.transitions,
+                  node.index,
+                  visited_nodes,
                   rest,
-                  value,
                   char,
                 )
-              evaluate_loop(nfa, input, new_stack)
+
+              evaluate_loop(nfa, input, updated_nodes, visited_nodes)
             }
           }
         False -> {
-          let char = string.slice(input, value.i, 1)
-          let new_stack =
-            process_transitions(nfa, value.state.transitions, rest, value, char)
-          evaluate_loop(nfa, input, new_stack)
+          let char = string.slice(input, node.index, 1)
+          let updated_nodes =
+            process_transitions(
+              nfa,
+              node.state.transitions,
+              node.index,
+              visited_nodes,
+              rest,
+              char,
+            )
+
+          evaluate_loop(nfa, input, updated_nodes, visited_nodes)
         }
       }
     }
@@ -110,25 +132,39 @@ fn evaluate_loop(nfa: NFA, input: String, stack: List(StackValue)) -> Bool {
 fn process_transitions(
   nfa: NFA,
   transitions: List(state.Transition),
-  stack: List(StackValue),
-  stkv: StackValue,
+  index: Int,
+  visited_nodes: Set(Node),
+  pending_nodes: List(Node),
   char: String,
-) -> List(StackValue) {
+) -> List(Node) {
   case transitions {
-    [] -> stack
+    [] -> pending_nodes
     [#(matcher, name), ..rest] -> {
       case state.matches(matcher, char) {
         False -> {
-          process_transitions(nfa, rest, stack, stkv, char)
+          process_transitions(
+            nfa,
+            rest,
+            index,
+            visited_nodes,
+            pending_nodes,
+            char,
+          )
         }
         True -> {
-          let index = case state.is_epsilon(matcher) {
-            True -> stkv.i
-            False -> stkv.i + 1
-          }
           let assert Ok(to) = dict.get(nfa.states, name)
-          let new_stack = list.append(stack, [StackValue(i: index, state: to)])
-          process_transitions(nfa, rest, new_stack, stkv, char)
+
+          let new_node = case state.is_epsilon(matcher) {
+            True -> Node(index: index, state: to)
+            False -> Node(index: index + 1, state: to)
+          }
+
+          let nodes = case set.contains(visited_nodes, new_node) {
+            True -> pending_nodes
+            False -> list.append(pending_nodes, [new_node])
+          }
+
+          process_transitions(nfa, rest, index, visited_nodes, nodes, char)
         }
       }
     }
