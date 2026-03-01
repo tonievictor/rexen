@@ -47,3 +47,8 @@ pub fn new(expression: String) -> Result(machine.NFA, String) {
 pub fn compute(engine: machine.NFA, input: String) -> Bool {
   machine.evaluate(engine, input)
 }
+
+pub fn main() {
+  let assert Ok(nfa) = new("(a*)*")
+  echo compute(nfa, "b")
+}
