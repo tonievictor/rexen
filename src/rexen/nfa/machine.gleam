@@ -101,9 +101,9 @@ fn evaluate_loop(
                 process_transitions(
                   nfa,
                   node.state.transitions,
-                  rest,
+                  node.index,
                   visited_nodes,
-                  node,
+                  rest,
                   char,
                 )
 
@@ -116,9 +116,9 @@ fn evaluate_loop(
             process_transitions(
               nfa,
               node.state.transitions,
-              rest,
+              node.index,
               visited_nodes,
-              node,
+              rest,
               char,
             )
 
@@ -132,33 +132,39 @@ fn evaluate_loop(
 fn process_transitions(
   nfa: NFA,
   transitions: List(state.Transition),
-  nodes: List(Node),
+  index: Int,
   visited_nodes: Set(Node),
-  node: Node,
+  pending_nodes: List(Node),
   char: String,
 ) -> List(Node) {
   case transitions {
-    [] -> nodes
+    [] -> pending_nodes
     [#(matcher, name), ..rest] -> {
       case state.matches(matcher, char) {
         False -> {
-          process_transitions(nfa, rest, nodes, visited_nodes, node, char)
+          process_transitions(
+            nfa,
+            rest,
+            index,
+            visited_nodes,
+            pending_nodes,
+            char,
+          )
         }
         True -> {
-          let index = case state.is_epsilon(matcher) {
-            True -> node.index
-            False -> node.index + 1
-          }
-
           let assert Ok(to) = dict.get(nfa.states, name)
-          let new_node = Node(index: index, state: to)
+
+          let new_node = case state.is_epsilon(matcher) {
+            True -> Node(index: index, state: to)
+            False -> Node(index: index + 1, state: to)
+          }
 
           let nodes = case set.contains(visited_nodes, new_node) {
-            True -> nodes
-            False -> list.append(nodes, [new_node])
+            True -> pending_nodes
+            False -> list.append(pending_nodes, [new_node])
           }
 
-          process_transitions(nfa, rest, nodes, visited_nodes, node, char)
+          process_transitions(nfa, rest, index, visited_nodes, nodes, char)
         }
       }
     }
